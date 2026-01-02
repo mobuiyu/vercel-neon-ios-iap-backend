@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { getStatus } from "@/lib/iap-service";
+import { getUserIdFromRequest } from "@/lib/auth";
+import { getUserStatus } from "@/lib/iap-service";
+
 export const runtime = "nodejs";
+
 export async function GET(req: Request) {
-  const userId = new URL(req.url).searchParams.get("userId");
-  if (!userId) {
-    return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
+  try {
+    const userId = await getUserIdFromRequest(req);
+    const data = await getUserStatus(userId);
+    return NextResponse.json({ ok: true, data });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "unauthorized" }, { status: 401 });
   }
-  const data = await getStatus(userId);
-  return NextResponse.json({ ok: true, data });
 }

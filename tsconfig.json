@@ -8,9 +8,7 @@
     "moduleResolution": "bundler",
     "jsx": "preserve",
     "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    "paths": { "@/*": ["src/*"] }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
