@@ -1,5 +1,4 @@
 import { jwtVerify, SignJWT } from "jose";
-
 const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
 if (!process.env.JWT_SECRET) throw new Error("Missing JWT_SECRET");
 

@@ -6,9 +6,7 @@ if (!BUNDLE_ID) throw new Error("Missing APPLE_BUNDLE_ID");
 
 type ProductKind = "consumable" | "non_consumable" | "subscription";
 
-function toIso(ms?: number) {
-  return ms ? new Date(ms).toISOString() : null;
-}
+function toIso(ms?: number) { return ms ? new Date(ms).toISOString() : null; }
 function computeStatus(p: AppleTransactionPayload) {
   const now = Date.now();
   if (p.revocationDate) return "revoked";
@@ -19,7 +17,6 @@ function inferKind(p: AppleTransactionPayload): ProductKind {
   if (p.originalTransactionId || p.expiresDate) return "subscription";
   return "non_consumable";
 }
-
 async function getProductConfig(productId: string): Promise<{ kind: ProductKind; entitlements: any } | null> {
   const rows = await sql`select kind, entitlements from iap_product where product_id = ${productId} limit 1`;
   if (!rows?.length) return null;
@@ -27,15 +24,8 @@ async function getProductConfig(productId: string): Promise<{ kind: ProductKind;
 }
 
 async function grantEntitlements(args: {
-  userId: string;
-  productId: string;
-  kind: ProductKind;
-  transactionId: string;
-  originalTransactionId: string | null;
-  status: string;
-  expiresDate: string | null;
-  raw: any;
-  productEntitlements: any;
+  userId: string; productId: string; kind: ProductKind; transactionId: string;
+  originalTransactionId: string | null; status: string; expiresDate: string | null; raw: any; productEntitlements: any;
 }) {
   const { userId, productId, kind, transactionId, originalTransactionId, status, expiresDate, raw, productEntitlements } = args;
 
@@ -70,7 +60,6 @@ async function grantEntitlements(args: {
     return;
   }
 
-  // consumable
   let credits: number | null = null;
   if (productEntitlements && typeof productEntitlements.credits === "number") credits = productEntitlements.credits;
   if (credits == null) {
@@ -87,7 +76,6 @@ async function grantEntitlements(args: {
 
 export async function verifyAndUpsertTransaction(userId: string, signedTransactionInfo: string) {
   const p = await verifySignedTransactionInfo(signedTransactionInfo, BUNDLE_ID);
-
   await sql`insert into app_user(id) values (${userId}) on conflict do nothing`;
 
   const transactionId = p.transactionId;
@@ -126,105 +114,38 @@ export async function verifyAndUpsertTransaction(userId: string, signedTransacti
       updated_at = now()
   `;
 
-  await grantEntitlements({
-    userId,
-    productId,
-    kind,
-    transactionId,
-    originalTransactionId,
-    status,
-    expiresDate,
-    raw: p,
-    productEntitlements
-  });
+  await grantEntitlements({ userId, productId, kind, transactionId, originalTransactionId, status, expiresDate, raw: p, productEntitlements });
 
-  return {
-    transactionId,
-    originalTransactionId,
-    productId,
-    kind,
-    status,
-    purchaseDate,
-    expiresDate,
-    revocationDate,
-    environment
-  };
+  return { transactionId, originalTransactionId, productId, kind, status, purchaseDate, expiresDate, revocationDate, environment };
 }
 
 export async function getUserStatus(userId: string) {
-  const entitlements = await sql`
-    select product_id, granted_at, source_transaction_id, meta
-    from user_entitlement
-    where user_id = ${userId}
-    order by granted_at desc
-  `;
-
-  const balanceRows = await sql`
-    select coalesce(sum(delta), 0) as balance
-    from user_ledger
-    where user_id = ${userId}
-  `;
+  const entitlements = await sql`select product_id, granted_at, source_transaction_id, meta from user_entitlement where user_id = ${userId} order by granted_at desc`;
+  const balanceRows = await sql`select coalesce(sum(delta), 0) as balance from user_ledger where user_id = ${userId}`;
   const consumableBalance = Number(balanceRows?.[0]?.balance ?? 0);
-
-  const subscriptions = await sql`
-    select original_transaction_id, product_id, status, expires_date, updated_at
-    from iap_subscription_state
-    where user_id = ${userId}
-    order by updated_at desc
-  `;
-
-  const transactions = await sql`
-    select product_id, kind, transaction_id, status, purchase_date, expires_date, revocation_date, environment, updated_at
-    from iap_transaction
-    where user_id = ${userId}
-    order by updated_at desc
-    limit 50
-  `;
-
+  const subscriptions = await sql`select original_transaction_id, product_id, status, expires_date, updated_at from iap_subscription_state where user_id = ${userId} order by updated_at desc`;
+  const transactions = await sql`select product_id, kind, transaction_id, status, purchase_date, expires_date, revocation_date, environment, updated_at from iap_transaction where user_id = ${userId} order by updated_at desc limit 50`;
   return { entitlements, consumableBalance, subscriptions, transactions };
 }
 
-/**
- * ---- Notifications v2 integration ----
- * Map Apple notifications to your user via originalTransactionId/transactionId.
- * If we cannot map, we log the notification and acknowledge (200) to avoid retries.
- */
+// Notifications mapping + processing
 export async function findUserIdForNotification(n: AppleNotificationPayload): Promise<string | null> {
   const orig = n?.data?.originalTransactionId;
   const txId = n?.data?.transactionId;
-
   if (orig) {
-    const rows = await sql`
-      select user_id from iap_subscription_state
-      where original_transaction_id = ${orig}
-      limit 1
-    `;
+    const rows = await sql`select user_id from iap_subscription_state where original_transaction_id = ${orig} limit 1`;
     if (rows?.length) return rows[0].user_id as string;
   }
-
   if (txId) {
-    const rows = await sql`
-      select user_id from iap_transaction
-      where transaction_id = ${txId}
-      limit 1
-    `;
+    const rows = await sql`select user_id from iap_transaction where transaction_id = ${txId} limit 1`;
     if (rows?.length) return rows[0].user_id as string;
   }
-
   return null;
 }
 
 export async function logNotification(args: {
-  notificationUUID?: string;
-  notificationType?: string;
-  subtype?: string;
-  environment?: string;
-  originalTransactionId?: string;
-  transactionId?: string;
-  raw: any;
-  mappedUserId?: string | null;
-  processed: boolean;
-  error?: string | null;
+  notificationUUID?: string; notificationType?: string; subtype?: string; environment?: string;
+  originalTransactionId?: string; transactionId?: string; raw: any; mappedUserId?: string | null; processed: boolean; error?: string | null;
 }) {
   const a = args;
   await sql`
@@ -253,61 +174,30 @@ export async function logNotification(args: {
 
 export async function processNotificationSignedPayload(signedPayload: string) {
   const notif = await verifySignedNotificationPayload(signedPayload);
-
   const mappedUserId = await findUserIdForNotification(notif);
-
-  // if no transaction info, just log
   const signedTx = notif?.data?.signedTransactionInfo;
   const txId = notif?.data?.transactionId;
 
   if (!mappedUserId) {
-    await logNotification({
-      notificationUUID: notif.notificationUUID,
-      notificationType: notif.notificationType,
-      subtype: notif.subtype,
-      environment: notif?.data?.environment,
-      originalTransactionId: notif?.data?.originalTransactionId,
-      transactionId: txId,
-      raw: notif,
-      mappedUserId: null,
-      processed: false,
-      error: "no user mapping"
+    await logNotification({ notificationUUID: notif.notificationUUID, notificationType: notif.notificationType, subtype: notif.subtype,
+      environment: notif?.data?.environment, originalTransactionId: notif?.data?.originalTransactionId, transactionId: txId,
+      raw: notif, mappedUserId: null, processed: false, error: "no user mapping"
     });
     return { ok: true, processed: false, reason: "no user mapping", notificationType: notif.notificationType, subtype: notif.subtype };
   }
 
-  // If we have signedTransactionInfo, we can update transaction/subscription state by reusing verifyAndUpsertTransaction.
   if (signedTx) {
     const result = await verifyAndUpsertTransaction(mappedUserId, signedTx);
-    await logNotification({
-      notificationUUID: notif.notificationUUID,
-      notificationType: notif.notificationType,
-      subtype: notif.subtype,
-      environment: notif?.data?.environment,
-      originalTransactionId: notif?.data?.originalTransactionId,
-      transactionId: result.transactionId,
-      raw: notif,
-      mappedUserId,
-      processed: true,
-      error: null
+    await logNotification({ notificationUUID: notif.notificationUUID, notificationType: notif.notificationType, subtype: notif.subtype,
+      environment: notif?.data?.environment, originalTransactionId: notif?.data?.originalTransactionId, transactionId: result.transactionId,
+      raw: notif, mappedUserId, processed: true, error: null
     });
     return { ok: true, processed: true, userId: mappedUserId, result, notificationType: notif.notificationType, subtype: notif.subtype };
   }
 
-  // If only transactionId exists, we can't fetch signedTransactionInfo here without Server API creds.
-  // We still log the notification; you can extend later with App Store Server API v2 lookup.
-  await logNotification({
-    notificationUUID: notif.notificationUUID,
-    notificationType: notif.notificationType,
-    subtype: notif.subtype,
-    environment: notif?.data?.environment,
-    originalTransactionId: notif?.data?.originalTransactionId,
-    transactionId: txId,
-    raw: notif,
-    mappedUserId,
-    processed: false,
-    error: "missing signedTransactionInfo"
+  await logNotification({ notificationUUID: notif.notificationUUID, notificationType: notif.notificationType, subtype: notif.subtype,
+    environment: notif?.data?.environment, originalTransactionId: notif?.data?.originalTransactionId, transactionId: txId,
+    raw: notif, mappedUserId, processed: false, error: "missing signedTransactionInfo"
   });
-
   return { ok: true, processed: false, userId: mappedUserId, reason: "missing signedTransactionInfo", notificationType: notif.notificationType, subtype: notif.subtype };
 }

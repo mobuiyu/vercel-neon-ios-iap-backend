@@ -1,52 +1,75 @@
-# JWT-secured iOS IAP Backend (Next.js 16 + Vercel + Neon) — Entitlements + Notifications v2
+# Backend: Apple/Google Login → JWT + iOS IAP (Next.js 16 + Vercel + Neon)
 
-This version adds **App Store Server Notifications v2** handling:
-- Endpoint: `POST /api/iap/notifications` (called by Apple)
-- Verifies `signedPayload` JWS via Apple's JWKS
-- Maps notification to user via `originalTransactionId` (preferred) or `transactionId`
-- If `data.signedTransactionInfo` exists, reuses verify flow to update DB + entitlements
-- Logs all notifications into `iap_notification_log`
+## 1) Deploy
+1. Run `schema.sql` in Neon
+2. Push to GitHub
+3. Import into Vercel
+4. Set env vars:
+   - DATABASE_URL
+   - JWT_SECRET
+   - APPLE_SIGNIN_CLIENT_ID
+   - GOOGLE_CLIENT_ID
+   - APPLE_BUNDLE_ID
+   - (optional) DEFAULT_CONSUMABLE_CREDITS
+5. Deploy
 
-## Endpoints
-- `POST /api/iap/verify` (JWT required)
-- `GET  /api/iap/status` (JWT required)
-- `POST /api/iap/notifications` (Apple, no JWT)
+## 2) Auth API
 
-## Env vars
-- `DATABASE_URL`
-- `APPLE_BUNDLE_ID`
-- `JWT_SECRET`
-- Optional: `DEFAULT_CONSUMABLE_CREDITS`
+### POST /api/auth/exchange
+Client obtains **Apple identityToken** (Sign in with Apple) or **Google ID token** (Google Sign-In),
+then exchanges it for your backend JWT.
 
-## DB setup
-Run `schema.sql` in Neon SQL Editor.
-
-## Configure Notifications URL (App Store Connect)
-App Store Connect → Your App → In-App Purchases → App Store Server Notifications:
-- Set URL to: `https://YOUR_DOMAIN.vercel.app/api/iap/notifications`
-
-Use “Send Test Notification” to validate delivery.
-
-## Important: user mapping
-Apple notifications do not know your user id. This backend maps notifications by:
-1. `originalTransactionId` in `iap_subscription_state` (created when your client calls `/verify`)
-2. fallback: `transactionId` in `iap_transaction`
-
-So ensure your client calls `/verify` at least once per subscription chain (e.g., after purchase or during restore).
-
-## Verify (client)
-```bash
-curl -X POST https://YOUR_DOMAIN.vercel.app/api/iap/verify \
-  -H "Authorization: Bearer <JWT>" \
-  -H "Content-Type: application/json" \
-  -d '{"signedTransactionInfo":"<JWS>"}'
+Request:
+```json
+{ "provider": "apple", "idToken": "<apple_id_token>" }
+```
+or
+```json
+{ "provider": "google", "idToken": "<google_id_token>" }
 ```
 
-## Status (client)
-```bash
-curl https://YOUR_DOMAIN.vercel.app/api/iap/status \
-  -H "Authorization: Bearer <JWT>"
+Response:
+```json
+{ "ok": true, "jwt": "<your_jwt>", "userId": "apple_<sub>", "provider": "apple" }
 ```
 
-## Debug notifications
-Check `iap_notification_log` rows in Neon.
+### GET /api/auth/me
+Header:
+`Authorization: Bearer <your_jwt>`
+
+Response:
+```json
+{ "ok": true, "profile": { "userId": "...", "identities": [...] } }
+```
+
+## 3) IAP API (JWT required)
+
+### POST /api/iap/verify
+Header: `Authorization: Bearer <your_jwt>`
+Body:
+```json
+{ "signedTransactionInfo": "<StoreKit2 signedTransactionInfo JWS>" }
+```
+
+### GET /api/iap/status
+Header: `Authorization: Bearer <your_jwt>`
+
+Returns entitlements, consumable balance, subscriptions, recent transactions.
+
+## 4) Notifications v2
+Set App Store Server Notifications URL to:
+`https://YOUR_DOMAIN.vercel.app/api/iap/notifications`
+
+Apple will POST:
+```json
+{ "signedPayload": "<JWS>" }
+```
+
+This backend verifies the signedPayload and:
+- maps notification to user via `originalTransactionId` or `transactionId` in DB
+- if `data.signedTransactionInfo` exists, updates subscription state and entitlements
+- logs all notifications in `iap_notification_log`
+
+## Notes
+- Apple id token verification uses Apple JWKS at `https://appleid.apple.com/auth/keys`. (Apple docs)
+- Google id token verification enforces issuer = `accounts.google.com` or `https://accounts.google.com` and audience = your GOOGLE_CLIENT_ID. (Google docs)

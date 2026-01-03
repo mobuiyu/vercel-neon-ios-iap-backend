@@ -1,14 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
-
-/**
- * Apple StoreKit / App Store Server JWS public keys (JWKS).
- * Used for verifying:
- * - StoreKit2 signedTransactionInfo
- * - App Store Server Notifications v2 signedPayload
- */
-const jwks = createRemoteJWKSet(
-  new URL("https://api.storekit.itunes.apple.com/in-app-purchase/publicKeys")
-);
+const jwks = createRemoteJWKSet(new URL("https://api.storekit.itunes.apple.com/in-app-purchase/publicKeys"));
 
 export type AppleTransactionPayload = {
   transactionId: string;
@@ -35,14 +26,10 @@ export type AppleNotificationPayload = {
   subtype?: string;
   notificationUUID?: string;
   data?: {
-    appAppleId?: number;
-    bundleId?: string;
     environment?: "Sandbox" | "Production";
     signedTransactionInfo?: string;
-    signedRenewalInfo?: string;
     transactionId?: string;
     originalTransactionId?: string;
-    productId?: string;
     [k: string]: any;
   };
   [k: string]: any;

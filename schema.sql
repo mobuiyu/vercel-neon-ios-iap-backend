@@ -5,6 +5,19 @@ create table if not exists app_user (
   created_at timestamptz not null default now()
 );
 
+create table if not exists auth_identity (
+  id bigserial primary key,
+  provider text not null check (provider in ('apple','google')),
+  subject text not null,
+  user_id text not null references app_user(id),
+  email text,
+  raw_claims jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(provider, subject)
+);
+create index if not exists idx_auth_identity_user on auth_identity(user_id);
+
 create table if not exists iap_product (
   product_id text primary key,
   kind text not null check (kind in ('consumable','non_consumable','subscription')),
@@ -23,12 +36,11 @@ create table if not exists iap_transaction (
   expires_date timestamptz,
   revocation_date timestamptz,
   environment text,
-  status text not null default 'active', -- active / expired / revoked
+  status text not null default 'active',
   raw jsonb not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_iap_transaction_user on iap_transaction(user_id);
 create index if not exists idx_iap_transaction_orig on iap_transaction(original_transaction_id);
 
@@ -36,7 +48,7 @@ create table if not exists iap_subscription_state (
   original_transaction_id text primary key,
   user_id text not null references app_user(id),
   product_id text not null,
-  status text not null, -- active / expired / revoked
+  status text not null,
   expires_date timestamptz,
   last_transaction_id text,
   raw jsonb not null,
@@ -61,7 +73,6 @@ create table if not exists user_ledger (
   created_at timestamptz not null default now()
 );
 
--- Notifications log (v2)
 create table if not exists iap_notification_log (
   id bigserial primary key,
   notification_uuid text unique,
@@ -77,6 +88,5 @@ create table if not exists iap_notification_log (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists idx_iap_notif_otid on iap_notification_log(original_transaction_id);
 create index if not exists idx_iap_notif_user on iap_notification_log(mapped_user_id);
